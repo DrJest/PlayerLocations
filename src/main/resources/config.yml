@@ -1,0 +1,9 @@
+outputFile: _DATA_FOLDER_/players.json
+updateInterval: 5000
+offlinePlayersFile: _DATA_FOLDER_/offline.json
+saveOfflinePlayers: true
+showVanishedPlayers: false
+showSneakingPlayers: false
+showInvisiblePlayers: false
+showSpectatorPlayers: false
+Mapping:
