@@ -1,0 +1,4 @@
+RewriteEngine On
+RewriteBase /
+RewriteRule ^skin/name/([^/]*)/([^/]*)\.png$ skin.php?name=$1&size=$2 [L]
+RewriteRule ^skin/uuid/([^/]*)/([^/]*)\.png$ skin.php?uuid=$1&size=$2 [L]
