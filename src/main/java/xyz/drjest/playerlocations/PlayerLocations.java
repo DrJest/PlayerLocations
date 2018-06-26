@@ -5,6 +5,7 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.Writer;
+import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,50 +20,46 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.metadata.MetadataValue;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import com.google.gson.stream.JsonReader;
 
-public final class PlayerLocations extends JavaPlugin implements Listener {
-	private PluginDescriptionFile mPdfFile;
+public final class PlayerLocations extends JavaPlugin implements Listener, Runnable {
+	private PluginDescriptionFile pdfFile;
 	private HashMap<String, Object> pluginOptions = new HashMap<>();
 	private int _updateTaskId = 0;
 	private HashMap<String, String> _mapNameMapping = new HashMap<>();
 	private ConcurrentHashMap<String, PlayerState> _offlinePlayers = new ConcurrentHashMap<>();
-	private Gson gson = new GsonBuilder().create();
+	private Gson gson = new Gson();
 	
 	@EventHandler
 	public void playerJoin(PlayerJoinEvent event) {
 		_offlinePlayers.remove(event.getPlayer().getName());
-		updateJSON();
+		run();
 	}
 	
 	@EventHandler
 	public void playerQuit(PlayerQuitEvent event) {
-		_offlinePlayers.putIfAbsent(event.getPlayer().getName(), new PlayerState(event.getPlayer()));
-		updateJSON();
-	}
-	
-	@EventHandler
-	public void onPlayerMove(PlayerMoveEvent event) {
-		updateJSON();
+		_offlinePlayers.put(event.getPlayer().getName(), new PlayerState(event.getPlayer()));
+		run();
 	}
 	
 	@Override
 	public void onEnable() {
-		mPdfFile = getDescription();
-	    Logger.getLogger(mPdfFile.getName()).log(Level.INFO, mPdfFile.getName() + " version " + mPdfFile.getVersion() + " enabled");
+		pdfFile = getDescription();
+	    Logger.getLogger(pdfFile.getName()).log(Level.INFO, pdfFile.getName() + " version " + pdfFile.getVersion() + " enabled");
 	    loadOptions();
 	    initMapNameMapping();
 	    if((boolean) pluginOptions.get("saveOfflinePlayers")) {
 	    	loadOfflinePlayers();	
 	    }
+	    int updateInterval = (int) pluginOptions.get("updateInterval") / 100;
+	    _updateTaskId = getServer().getScheduler().scheduleSyncRepeatingTask(this, this, 0L, updateInterval);
 	    getConfig().options().copyDefaults(true);
 	    saveConfig();
 	    getServer().getPluginManager().registerEvents(this, this);
@@ -71,10 +68,10 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 	private void loadOfflinePlayers() {
 	    if ((pluginOptions.get("offlinePlayersFile") != null)) {
 	    	String filename = (String) pluginOptions.get("offlinePlayersFile");
-	    	Gson gson = new Gson();
 	    	try {
 				JsonReader reader = new JsonReader(new FileReader(filename));
-				_offlinePlayers = gson.fromJson(reader, _offlinePlayers.getClass());
+				Type type = new TypeToken<ConcurrentHashMap<String,PlayerState>>() {}.getType();   
+				_offlinePlayers = gson.fromJson(reader, type);
 			} catch (FileNotFoundException e) {
 				Logger.getLogger(getDescription().getName()).log(Level.INFO, "NO_OFFLINE_PLAYERS_FOUND");
 			}
@@ -87,7 +84,7 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 		if((boolean) pluginOptions.get("saveOfflinePlayers")) {
 			saveOfflinePlayers();
 		}
-	    Logger.getLogger(getDescription().getName()).log(Level.INFO, mPdfFile.getName() + " disabled");
+	    Logger.getLogger(getDescription().getName()).log(Level.INFO, pdfFile.getName() + " disabled");
 	}
 	
 	private void saveOfflinePlayers() {
@@ -99,10 +96,11 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 				Logger.getLogger(getDescription().getName()).log(Level.INFO, "UNABLE_TO_SAVE_OFFLINE_PLAYERS");
 			}
 	    }
-    	updateJSON();
+    	run();
 	}
-
-	private void updateJSON() {
+	
+	@Override
+	public void run() {
 		HashMap<String, PlayerState> players = new HashMap<>();
 		for(Player p: getServer().getOnlinePlayers()) {
 			PlayerState player = new PlayerState(p);
@@ -119,15 +117,21 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 		}
 		if( (boolean) pluginOptions.get("saveOfflinePlayers") ) {
 			_offlinePlayers.forEach((k,v) -> {
-				v.status = 5;
-				v.world = _mapNameMapping.get(v.world);
-				players.put(k, v);
+				PlayerState s = new PlayerState(v);
+				s.status = 5;
+				s.world = _mapNameMapping.get(v.world);
+				players.putIfAbsent(k, s);
 			});
 		}
 	    if ((pluginOptions.get("outputFile") != null)) {
-	    	String opt = (String) pluginOptions.get("outputFile");
-	    	try (Writer writer = new FileWriter(opt)) {
-	    	    gson.toJson(players, writer);
+	    	String optFile = (String) pluginOptions.get("outputFile");
+	    	HashMap<String, Object> opt = new HashMap<>();
+	    	HashMap<String, Object> options = new HashMap<>();
+	    	options.put("updateInterval", (int) pluginOptions.get("updateInterval"));
+	    	opt.put("options", options);
+	    	opt.put("players", players);
+	    	try (Writer writer = new FileWriter(optFile)) {
+	    	    gson.toJson(opt, writer);
 	    	} catch (IOException e) {
 	    		Logger.getLogger(getDescription().getName()).log(Level.INFO, "UNABLE_TO_SAVE_OUTPUT");
 			}
@@ -188,15 +192,6 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 	    public int y;
 	    public int z;
 	    
-	    /*
-	    public PlayerState(String worldName, int xLocation, int yLocation, int zLocation) { 
-	      world = worldName;
-	      x = xLocation;
-	      y = yLocation;
-	      z = zLocation;
-	    }
-	    */
-	    
 	    public PlayerState(Player p) {
 	    	Location loc = p.getLocation();
 		    world = loc.getWorld().getName();
@@ -206,7 +201,15 @@ public final class PlayerLocations extends JavaPlugin implements Listener {
 		    status = getPlayerStatus(p);
 	    }
 	    
-	    @Override 
+	    public PlayerState(PlayerState s) {
+	    	world = s.world;
+	    	x = s.x;
+	    	y = s.y;
+	    	z = s.z;
+	    	status = s.status;
+	    }
+	    
+		@Override 
 	    public String toString() {
 	    	return "Status: " + status + "\n World: " + world + "\n X: " + x + "\n Y: " + y + "\n Z: " + z;
 	    }
