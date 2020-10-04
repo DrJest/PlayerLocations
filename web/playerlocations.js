@@ -98,8 +98,8 @@ const PlayerLocations = function(settings) {
       let xhr = e.target;
       let data = JSON.parse(xhr.responseText);
       let ps = {};
-      for(let i in data) {
-        let item = data[i];
+      for(let i in data.players) {
+        let item = data.players[i];
         item.name = i;
         if( item.world === overviewer.current_world && ( item.status === 4 || ( item.status === 5 && currentSettings.showOfflinePlayers) ) ) {
           ps[i] = item;
